@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Company Expense Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 960px;
+      margin: auto;
+      padding: 20px;
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    input, select, textarea, button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      font-size: 16px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+    }
+    button {
+      background-color: #27ae60;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover {
+      background-color: #219150;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      text-align: left;
+    }
+    th {
+      background-color: #eee;
+    }
+    .totals, .balance {
+      font-weight: bold;
+      font-size: 18px;
+      margin-top: 20px;
+    }
+    #loginForm, #trackerSection {
+      display: none;
+      padding: 30px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.1);
+      margin: 40px auto;
+      max-width: 500px;
+    }
+    #logoutBtn {
+      background-color: #e74c3c;
+      float: right;
+      width: auto;
+      padding: 8px 16px;
+      margin-top: -40px;
+    }
+    canvas {
+      margin-top: 40px;
+    }
+    .error {
+      color: red;
+      margin-top: 10px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="loginForm">
+  <h2>Login to RRIPL Expense Tracker</h2>
+  <input type="text" id="username" placeholder="Username " />
+  <input type="password" id="password" placeholder="Password " />
+  <button onclick="login()">Login</button>
+  <div class="error" id="loginError">Invalid username or password</div>
+</div>
+
+<div id="trackerSection" class="container">
+  <h1>💼 Company Expense Tracker</h1>
+  <button id="logoutBtn" onclick="logout()">Logout</button>
+
+  <h2>Add Expense</h2>
+  <input type="date" id="dateInput" />
+  <select id="categoryInput">
+    <option value="" disabled selected>Select category</option>
+    <option value="Travel">Travel</option>
+    <option value="Food">Food</option>
+    <option value="Supplies">Supplies</option>
+    <option value="Accommodation">Accommodation</option>
+    <option value="Other">Other</option>
+  </select>
+  <input type="number" id="amountInput" placeholder="Amount (₹)" min="0" step="0.01" />
+  <textarea id="descInput" rows="2" placeholder="Description (optional)"></textarea>
+  <button onclick="addExpense()">Add Expense</button>
+
+  <h2>Add Company Provided Amount</h2>
+  <input type="date" id="providedDate" />
+  <input type="number" id="providedAmount" placeholder="Amount Provided (₹)" min="0" step="0.01" />
+  <input type="text" id="providedNote" placeholder="Note (optional)" />
+  <button onclick="addProvided()">Add Provided Amount</button>
+
+  <h2>Expense List</h2>
+  <table id="expenseTable">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Category</th>
+        <th>Amount (₹)</th>
+        <th>Description</th>
+        <th>Delete</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <div class="totals" id="totalExpenses">Total Expenses: ₹0.00</div>
+
+  <h2>Company Provided</h2>
+  <table id="providedTable">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Amount (₹)</th>
+        <th>Note</th>
+        <th>Delete</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <div class="totals" id="totalProvided">Total Provided: ₹0.00</div>
+
+  <div class="balance" id="balance">Balance: ₹0.00</div>
+
+  <h2>📊 Monthly Breakdown</h2>
+  <canvas id="monthlyChart" width="900" height="400"></canvas>
+
+  <button style="margin-top: 30px;" onclick="exportCSV()">Export All as CSV</button>
+</div>
+
+<script>
+  // Login Logic
+  function login() {
+    const u = document.getElementById('username').value.trim();
+    const p = document.getElementById('password').value.trim();
+    const err = document.getElementById('loginError');
+    if (u === 'RRI' && p === '9001172554P') {
+      localStorage.setItem('loggedIn', 'true');
+      showTracker();
+    } else {
+      err.style.display = 'block';
+    }
+  }
+
+  function logout() {
+    localStorage.removeItem('loggedIn');
+    location.reload();
+  }
+
+  function showTracker() {
+    document.getElementById('loginForm').style.display = 'none';
+    document.getElementById('trackerSection').style.display = 'block';
+    render();
+  }
+
+  // Check login status
+  if (localStorage.getItem('loggedIn') === 'true') {
+    showTracker();
+  } else {
+    document.getElementById('loginForm').style.display = 'block';
+  }
+
+  // Tracker Logic
+  let expenses = JSON.parse(localStorage.getItem('expenses')) || [];
+  let provided = JSON.parse(localStorage.getItem('provided')) || [];
+
+  function saveData() {
+    localStorage.setItem('expenses', JSON.stringify(expenses));
+    localStorage.setItem('provided', JSON.stringify(provided));
+  }
+
+  function addExpense() {
+    const date = document.getElementById('dateInput').value;
+    const category = document.getElementById('categoryInput').value;
+    const amount = parseFloat(document.getElementById('amountInput').value);
+    const description = document.getElementById('descInput').value.trim();
+
+    if (!date || !category || isNaN(amount) || amount <= 0) {
+      alert('Fill all expense fields correctly.');
+      return;
+    }
+
+    expenses.push({ date, category, amount, description });
+    saveData();
+    render();
+
+    document.getElementById('dateInput').value = '';
+    document.getElementById('categoryInput').selectedIndex = 0;
+    document.getElementById('amountInput').value = '';
+    document.getElementById('descInput').value = '';
+  }
+
+  function addProvided() {
+    const date = document.getElementById('providedDate').value;
+    const amount = parseFloat(document.getElementById('providedAmount').value);
+    const note = document.getElementById('providedNote').value.trim();
+
+    if (!date || isNaN(amount) || amount <= 0) {
+      alert('Fill all provided fields correctly.');
+      return;
+    }
+
+    provided.push({ date, amount, note });
+    saveData();
+    render();
+
+    document.getElementById('providedDate').value = '';
+    document.getElementById('providedAmount').value = '';
+    document.getElementById('providedNote').value = '';
+  }
+
+  function deleteExpense(i) {
+    if (confirm('Delete this expense?')) {
+      expenses.splice(i, 1);
+      saveData();
+      render();
+    }
+  }
+
+  function deleteProvided(i) {
+    if (confirm('Delete this entry?')) {
+      provided.splice(i, 1);
+      saveData();
+      render();
+    }
+  }
+
+  function getMonthKey(dateStr) {
+    const d = new Date(dateStr);
+    const m = d.getMonth() + 1;
+    return `${d.getFullYear()}-${m < 10 ? '0' + m : m}`;
+  }
+
+  function getMonthlyData(data) {
+    const result = {};
+    data.forEach(item => {
+      const key = getMonthKey(item.date);
+      result[key] = (result[key] || 0) + item.amount;
+    });
+    return result;
+  }
+
+  function render() {
+    // Tables
+    const expBody = document.querySelector('#expenseTable tbody');
+    const provBody = document.querySelector('#providedTable tbody');
+    expBody.innerHTML = '';
+    provBody.innerHTML = '';
+
+    let totalExp = 0, totalProv = 0;
+
+    expenses.forEach((e, i) => {
+      totalExp += e.amount;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${e.date}</td><td>${e.category}</td><td>₹${e.amount.toFixed(2)}</td><td>${e.description || '-'}</td>
+        <td><button onclick="deleteExpense(${i})">❌</button></td>`;
+      expBody.appendChild(tr);
+    });
+
+    provided.forEach((p, i) => {
+      totalProv += p.amount;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${p.date}</td><td>₹${p.amount.toFixed(2)}</td><td>${p.note || '-'}</td>
+        <td><button onclick="deleteProvided(${i})">❌</button></td>`;
+      provBody.appendChild(tr);
+    });
+
+    document.getElementById('totalExpenses').textContent = `Total Expenses: ₹${totalExp.toFixed(2)}`;
+    document.getElementById('totalProvided').textContent = `Total Provided: ₹${totalProv.toFixed(2)}`;
+
+    const balance = (totalProv - totalExp).toFixed(2);
+    const balanceDiv = document.getElementById('balance');
+    balanceDiv.textContent = `Balance: ₹${balance}`;
+    balanceDiv.style.color = balance >= 0 ? 'green' : 'red';
+
+    // Chart
+    const monthlyExpenses = getMonthlyData(expenses);
+    const monthlyProvided = getMonthlyData(provided);
+    const allMonths = Array.from(new Set([...Object.keys(monthlyExpenses), ...Object.keys(monthlyProvided)])).sort();
+
+    const ctx = document.getElementById('monthlyChart').getContext('2d');
+    if (window.chartRef) window.chartRef.destroy();
+
+    window.chartRef = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: allMonths,
+        datasets: [
+          {
+            label: 'Expenses (₹)',
+            data: allMonths.map(m => monthlyExpenses[m] || 0),
+            backgroundColor: '#e74c3c'
+          },
+          {
+            label: 'Provided (₹)',
+            data: allMonths.map(m => monthlyProvided[m] || 0),
+            backgroundColor: '#27ae60'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  function exportCSV() {
+    let rows = [["Type", "Date", "Category/Note", "Amount", "Description"]];
+
+    expenses.forEach(e =>
+      rows.push(["Expense", e.date, e.category, e.amount, e.description || "-"])
+    );
+    provided.forEach(p =>
+      rows.push(["Provided", p.date, p.note || "-", p.amount, "-"])
+    );
+
+    const csv = rows.map(r => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "expense_data.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+</script>
+
+</body>
+</html>
